@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>GPSSpeed</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">VELOCÍMETRO GPS</p>
+        <h1>GPSSpeed</h1>
+      </div>
+      <div id="gpsStatus" class="gps-status" aria-live="polite">
+        <span class="gps-dot"></span>
+        GPS aguardando
+      </div>
+    </header>
+
+    <section class="speed-panel" aria-label="Velocidade atual">
+      <div class="speed-value" id="currentSpeed">0</div>
+      <div class="speed-unit">km/h</div>
+      <div class="accuracy" id="gpsAccuracy">Precisão: -- m</div>
+    </section>
+
+    <section class="stats-grid" aria-label="Dados do percurso">
+      <article class="stat-card">
+        <span>Máxima</span>
+        <strong id="maxSpeed">0 km/h</strong>
+      </article>
+      <article class="stat-card">
+        <span>Média</span>
+        <strong id="avgSpeed">0 km/h</strong>
+      </article>
+      <article class="stat-card">
+        <span>Distância</span>
+        <strong id="distance">0,00 km</strong>
+      </article>
+      <article class="stat-card">
+        <span>Tempo</span>
+        <strong id="elapsedTime">00:00:00</strong>
+      </article>
+    </section>
+
+    <section class="trip-actions" aria-label="Controles do percurso">
+      <button id="startTripBtn" class="primary-action" type="button">Iniciar percurso</button>
+      <div class="secondary-actions">
+        <button id="pauseTripBtn" type="button" disabled>Pausar</button>
+        <button id="finishTripBtn" type="button" disabled>Finalizar</button>
+      </div>
+    </section>
+
+    <section class="location-card">
+      <div>
+        <span>Latitude</span>
+        <strong id="latitude">--</strong>
+      </div>
+      <div>
+        <span>Longitude</span>
+        <strong id="longitude">--</strong>
+      </div>
+    </section>
+
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <a class="active" href="index.html">Velocímetro</a>
+      <a href="pages/mapa.html">Mapa</a>
+      <a href="pages/historico.html">Histórico</a>
+      <a href="pages/configuracoes.html">Config.</a>
+    </nav>
+  </main>
+
+  <script src="js/utils.js"></script>
+  <script src="js/database.js"></script>
+  <script src="js/gps.js"></script>
+  <script src="js/speedometer.js"></script>
+  <script src="js/tracking.js"></script>
+  <script src="js/trips.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
