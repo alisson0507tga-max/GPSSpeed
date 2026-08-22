@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#111827">
   <title>GPSSpeed</title>
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -27,22 +28,10 @@
     </section>
 
     <section class="stats-grid" aria-label="Dados do percurso">
-      <article class="stat-card">
-        <span>Máxima</span>
-        <strong id="maxSpeed">0 km/h</strong>
-      </article>
-      <article class="stat-card">
-        <span>Média</span>
-        <strong id="avgSpeed">0 km/h</strong>
-      </article>
-      <article class="stat-card">
-        <span>Distância</span>
-        <strong id="distance">0,00 km</strong>
-      </article>
-      <article class="stat-card">
-        <span>Tempo</span>
-        <strong id="elapsedTime">00:00:00</strong>
-      </article>
+      <article class="stat-card"><span>Máxima</span><strong id="maxSpeed">0 km/h</strong></article>
+      <article class="stat-card"><span>Média</span><strong id="avgSpeed">0 km/h</strong></article>
+      <article class="stat-card"><span>Distância</span><strong id="distance">0,00 km</strong></article>
+      <article class="stat-card"><span>Tempo</span><strong id="elapsedTime">00:00:00</strong></article>
     </section>
 
     <section class="trip-actions" aria-label="Controles do percurso">
@@ -54,14 +43,8 @@
     </section>
 
     <section class="location-card">
-      <div>
-        <span>Latitude</span>
-        <strong id="latitude">--</strong>
-      </div>
-      <div>
-        <span>Longitude</span>
-        <strong id="longitude">--</strong>
-      </div>
+      <div><span>Latitude</span><strong id="latitude">--</strong></div>
+      <div><span>Longitude</span><strong id="longitude">--</strong></div>
     </section>
 
     <nav class="bottom-nav" aria-label="Navegação principal">
@@ -74,6 +57,7 @@
 
   <script src="js/utils.js"></script>
   <script src="js/database.js"></script>
+  <script src="js/settings.js"></script>
   <script src="js/gps.js"></script>
   <script src="js/speedometer.js"></script>
   <script src="js/tracking.js"></script>
