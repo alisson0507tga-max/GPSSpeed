@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Histórico - GPSSpeed</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar"><div><p class="eyebrow">PERCURSOS SALVOS</p><h1>Histórico</h1></div></header>
+    <section id="tripList" class="stats-grid"></section>
+    <p id="emptyTrips" class="location-card">Nenhum percurso salvo ainda.</p>
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <a href="../index.html">Velocímetro</a><a href="mapa.html">Mapa</a><a class="active" href="historico.html">Histórico</a><a href="configuracoes.html">Config.</a>
+    </nav>
+  </main>
+  <script src="../js/utils.js"></script>
+  <script src="../js/database.js"></script>
+  <script src="../js/trips.js"></script>
+  <script>
+    (() => {
+      const list = document.getElementById('tripList');
+      const empty = document.getElementById('emptyTrips');
+      const trips = window.GPSSpeedTrips.getTrips();
+      empty.hidden = trips.length > 0;
+      list.innerHTML = trips.map((trip) => `
+        <article class="stat-card">
+          <span>${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(trip.startedAt))}</span>
+          <strong>${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</strong>
+          <span>Tempo: ${GPSSpeedUtils.formatDuration(trip.elapsedMs)}</span>
+          <span>Máx.: ${GPSSpeedUtils.formatSpeed(trip.maxSpeed)}</span>
+          <a href="viagem.html?id=${encodeURIComponent(trip.id)}">Abrir percurso</a>
+        </article>`).join('');
+    })();
+  </script>
+</body>
+</html>
