@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#111827"><title>Mapa - GPSSpeed</title><link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>#routeMap{min-height:420px;border-radius:18px;overflow:hidden}.map-select{width:100%;padding:14px;border-radius:12px;font-size:16px;margin-bottom:12px}</style>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar"><div><p class="eyebrow">ROTA GPS</p><h1>Mapa</h1></div></header>
+    <select id="tripSelect" class="map-select" aria-label="Escolher percurso"></select>
+    <div id="routeMap"></div>
+    <p id="mapEmpty" class="location-card" hidden>Nenhum percurso salvo para mostrar.</p>
+    <nav class="bottom-nav"><a href="../index.html">Velocímetro</a><a class="active" href="mapa.html">Mapa</a><a href="historico.html">Histórico</a><a href="configuracoes.html">Config.</a></nav>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="../js/utils.js"></script><script src="../js/database.js"></script><script src="../js/trips.js"></script><script src="../js/map.js"></script>
+  <script>
+    (() => {
+      const select = document.getElementById('tripSelect');
+      const empty = document.getElementById('mapEmpty');
+      const trips = GPSSpeedTrips.getTrips();
+      let map = null;
+      if (!trips.length) { select.hidden = true; document.getElementById('routeMap').hidden = true; empty.hidden = false; return; }
+      select.innerHTML = trips.map((t) => `<option value="${GPSSpeedUtils.escapeHtml(t.id)}">${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(t.startedAt))} - ${GPSSpeedUtils.formatDistanceKm(t.distanceKm)}</option>`).join('');
+      const requested = GPSSpeedUtils.getQueryParam('id');
+      if (requested && trips.some((t) => t.id === requested)) select.value = requested;
+      function draw() {
+        if (map) { map.remove(); map = null; }
+        const trip = GPSSpeedTrips.getTrip(select.value);
+        map = GPSSpeedMap.renderTripMap('routeMap', trip);
+      }
+      select.addEventListener('change', draw);
+      draw();
+    })();
+  </script>
+</body>
+</html>
