@@ -24,6 +24,12 @@
           console.error('Erro em listener de GPS:', error);
         }
       });
+
+      if (payload?.type === 'position') {
+        window.dispatchEvent(new CustomEvent('gpsspeed:gps-update', {
+          detail: payload
+        }));
+      }
     },
 
     start() {
@@ -103,17 +109,9 @@
     },
 
     updateUI(data) {
-      const speedEl = document.getElementById('currentSpeed');
       const accuracyEl = document.getElementById('gpsAccuracy');
       const latitudeEl = document.getElementById('latitude');
       const longitudeEl = document.getElementById('longitude');
-
-      if (speedEl) {
-        const safeSpeed = data.accuracy !== null && data.accuracy > 80 && data.speedKmh < 5
-          ? 0
-          : data.speedKmh;
-        speedEl.textContent = Math.max(0, Math.round(safeSpeed));
-      }
 
       if (accuracyEl) {
         accuracyEl.textContent = data.accuracy === null
