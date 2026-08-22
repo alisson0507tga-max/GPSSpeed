@@ -32,6 +32,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restaurar assinatura debug fixa
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: gpsspeed-debug-keystore-v1
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
