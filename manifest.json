@@ -1,0 +1,12 @@
+{
+  "name": "GPSSpeed",
+  "short_name": "GPSSpeed",
+  "description": "Velocímetro GPS com gravação de trajetos e histórico de percursos.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "lang": "pt-BR"
+}
