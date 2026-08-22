@@ -8,6 +8,7 @@
 
   let timerId = null;
   let lastAlertAt = 0;
+  let lastNativeSyncAt = 0;
 
   function formatElapsed(ms) {
     if (window.GPSSpeedUtils?.formatDuration) return window.GPSSpeedUtils.formatDuration(ms);
@@ -67,6 +68,7 @@
   function resetForNewTrip() {
     window.GPSSpeedTracking?.reset();
     window.GPSSpeedometer?.reset();
+    try { window.AndroidBridge?.clearTrackingSnapshot?.(); } catch (_) {}
     if (elapsedEl) elapsedEl.textContent = '00:00:00';
   }
 
@@ -81,11 +83,44 @@
     }
   }
 
+  function syncNativeSnapshot(force = false) {
+    if (!window.GPSSpeedTracking || !window.AndroidBridge?.getTrackingSnapshot) return false;
+    const now = Date.now();
+    if (!force && now - lastNativeSyncAt < 1500) return false;
+    lastNativeSyncAt = now;
+
+    try {
+      const raw = window.AndroidBridge.getTrackingSnapshot();
+      const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!snapshot || !['running', 'paused'].includes(snapshot.status)) return false;
+
+      const restored = window.GPSSpeedTracking.restoreFromSnapshot(snapshot);
+      if (restored) {
+        const points = Array.isArray(snapshot.points) ? snapshot.points : [];
+        window.GPSSpeedometer?.reset?.();
+        points.forEach((point) => {
+          window.GPSSpeedometer?.updateSpeed?.(Number(point.speedKmh) || 0);
+        });
+        setButtons(snapshot.status);
+        if (snapshot.status === 'running') startTimer();
+        else {
+          stopTimer();
+          updateTimer();
+        }
+      }
+      return restored;
+    } catch (error) {
+      console.warn('Não foi possível sincronizar o rastreamento nativo:', error);
+      return false;
+    }
+  }
+
   startBtn?.addEventListener('click', () => {
     if (!window.GPSSpeedTracking) return;
     const current = window.GPSSpeedTracking.getState();
     if (current.status === 'finished') resetForNewTrip();
     window.GPSSpeedTracking.start();
+    try { window.AndroidBridge?.startTracking?.(); } catch (_) {}
     setButtons('running');
     startTimer();
   });
@@ -95,12 +130,15 @@
     const current = window.GPSSpeedTracking.getState();
     if (current.status === 'running') {
       window.GPSSpeedTracking.pause();
+      try { window.AndroidBridge?.pauseTracking?.(); } catch (_) {}
       setButtons('paused');
+      stopTimer();
       updateTimer();
       return;
     }
     if (current.status === 'paused') {
       window.GPSSpeedTracking.resume();
+      try { window.AndroidBridge?.resumeTracking?.(); } catch (_) {}
       setButtons('running');
       startTimer();
     }
@@ -108,15 +146,22 @@
 
   finishBtn?.addEventListener('click', () => {
     if (!window.GPSSpeedTracking) return;
+
+    // Traz primeiro os pontos coletados enquanto a tela estava apagada.
+    syncNativeSnapshot(true);
+
     const result = window.GPSSpeedTracking.finish();
     stopTimer();
     updateTimer();
     setButtons('finished');
     window.GPSSpeedGPS?.stop?.();
+    try { window.AndroidBridge?.stopTracking?.(); } catch (_) {}
 
     try {
       const saved = window.GPSSpeedTrips?.saveCurrentTrip?.();
       if (saved) {
+        window.GPSSpeedTracking?.clearCheckpoint?.();
+        try { window.AndroidBridge?.clearTrackingSnapshot?.(); } catch (_) {}
         window.dispatchEvent(new CustomEvent('gpsspeed:trip-ready-to-save', {
           detail: { trip: saved, speed: window.GPSSpeedometer?.getStats?.() || null }
         }));
@@ -135,6 +180,20 @@
   window.addEventListener('gpsspeed:tracking-resume', () => setButtons('running'));
   window.addEventListener('gpsspeed:tracking-finish', () => setButtons('finished'));
 
-  setButtons(window.GPSSpeedTracking?.getState?.().status || 'idle');
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncNativeSnapshot(true);
+  });
+  window.addEventListener('focus', () => syncNativeSnapshot());
+
+  const restoredLocal = window.GPSSpeedTracking?.restoreCheckpoint?.() || false;
+  if (restoredLocal) {
+    const status = window.GPSSpeedTracking.getState().status;
+    setButtons(status);
+    if (status === 'running') startTimer();
+  } else {
+    setButtons(window.GPSSpeedTracking?.getState?.().status || 'idle');
+  }
+
   updateTimer();
+  window.setTimeout(() => syncNativeSnapshot(true), 400);
 })();
