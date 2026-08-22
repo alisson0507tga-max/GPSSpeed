@@ -5,6 +5,8 @@
     watchId: null,
     lastPosition: null,
     listeners: new Set(),
+    speedHistory: [],
+    maxSpeedHistory: 5,
 
     isSupported() {
       return 'geolocation' in navigator;
@@ -42,13 +44,14 @@
       if (this.watchId !== null) return true;
 
       this.setStatus('Buscando GPS...', 'searching');
+      this.speedHistory = [];
 
       this.watchId = navigator.geolocation.watchPosition(
         (position) => this.handlePosition(position),
         (error) => this.handleError(error),
         {
           enableHighAccuracy: true,
-          maximumAge: 1000,
+          maximumAge: 500,
           timeout: 15000
         }
       );
@@ -62,23 +65,55 @@
       }
 
       this.watchId = null;
+      this.speedHistory = [];
       this.setStatus('GPS pausado', 'idle');
+    },
+
+    median(values) {
+      if (!values.length) return 0;
+      const sorted = [...values].sort((a, b) => a - b);
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2
+        ? sorted[middle]
+        : (sorted[middle - 1] + sorted[middle]) / 2;
+    },
+
+    filterSpeed(rawSpeedKmh, accuracy) {
+      let speed = Number.isFinite(rawSpeedKmh) && rawSpeedKmh >= 0 ? rawSpeedKmh : 0;
+
+      // Zona morta para eliminar o movimento falso típico do GPS parado.
+      if (speed < 3) speed = 0;
+
+      // Com precisão ruim, exigimos um sinal de movimento mais forte.
+      if (Number.isFinite(accuracy) && accuracy > 35 && speed < 6) speed = 0;
+      if (Number.isFinite(accuracy) && accuracy > 60 && speed < 10) speed = 0;
+
+      this.speedHistory.push(speed);
+      if (this.speedHistory.length > this.maxSpeedHistory) {
+        this.speedHistory.shift();
+      }
+
+      const filtered = this.median(this.speedHistory);
+      return filtered < 3 ? 0 : filtered;
     },
 
     handlePosition(position) {
       const coords = position.coords;
-      const speedMps = Number.isFinite(coords.speed) && coords.speed >= 0 ? coords.speed : 0;
-      const speedKmh = speedMps * 3.6;
+      const rawSpeedMps = Number.isFinite(coords.speed) && coords.speed >= 0 ? coords.speed : 0;
+      const rawSpeedKmh = rawSpeedMps * 3.6;
+      const accuracy = Number.isFinite(coords.accuracy) ? coords.accuracy : null;
+      const speedKmh = this.filterSpeed(rawSpeedKmh, accuracy);
 
       const data = {
         type: 'position',
         timestamp: position.timestamp || Date.now(),
         latitude: coords.latitude,
         longitude: coords.longitude,
-        accuracy: Number.isFinite(coords.accuracy) ? coords.accuracy : null,
+        accuracy,
         altitude: Number.isFinite(coords.altitude) ? coords.altitude : null,
         heading: Number.isFinite(coords.heading) ? coords.heading : null,
-        speedMps,
+        rawSpeedKmh,
+        speedMps: speedKmh / 3.6,
         speedKmh
       };
 
