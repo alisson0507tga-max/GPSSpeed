@@ -11,6 +11,8 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/ic_gpsspeed"
+        android:roundIcon="@drawable/ic_gpsspeed"
         android:label="GPSSpeed"
         android:supportsRtl="true"
         android:theme="@style/Theme.GPSSpeed"
