@@ -8,7 +8,12 @@
   <main class="app-shell">
     <header class="topbar"><div><p class="eyebrow">DETALHES DO PERCURSO</p><h1>Viagem</h1></div></header>
     <section id="tripDetails" class="stats-grid"></section>
-    <section class="trip-actions"><a id="viewMap" class="primary-action" href="mapa.html">Ver no mapa</a><button id="deleteTrip" type="button">Excluir percurso</button></section>
+    <section class="trip-actions">
+      <a id="viewMap" class="primary-action" href="mapa.html">Ver no mapa</a>
+      <button id="shareGpx" type="button">Compartilhar rota GPX</button>
+      <button id="deleteTrip" type="button">Excluir percurso</button>
+    </section>
+    <p id="tripStatus" class="location-card" hidden></p>
     <p id="tripError" class="location-card" hidden>Percurso não encontrado.</p>
     <nav class="bottom-nav"><a href="../index.html">Velocímetro</a><a href="mapa.html">Mapa</a><a class="active" href="historico.html">Histórico</a><a href="configuracoes.html">Config.</a></nav>
   </main>
@@ -19,9 +24,11 @@
       const trip = GPSSpeedTrips.getTrip(id);
       const details = document.getElementById('tripDetails');
       const error = document.getElementById('tripError');
+      const status = document.getElementById('tripStatus');
       const map = document.getElementById('viewMap');
       const del = document.getElementById('deleteTrip');
-      if (!trip) { error.hidden = false; details.hidden = true; map.hidden = true; del.hidden = true; return; }
+      const share = document.getElementById('shareGpx');
+      if (!trip) { error.hidden = false; details.hidden = true; map.hidden = true; del.hidden = true; share.hidden = true; return; }
       details.innerHTML = `
         <article class="stat-card"><span>Início</span><strong>${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(trip.startedAt))}</strong></article>
         <article class="stat-card"><span>Distância</span><strong>${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</strong></article>
@@ -32,6 +39,19 @@
         <article class="stat-card"><span>Média</span><strong>${GPSSpeedUtils.formatSpeed(trip.averageSpeed)}</strong></article>
         <article class="stat-card"><span>Pontos GPS</span><strong>${Number(trip.pointCount) || 0}</strong></article>`;
       map.href = `mapa.html?id=${encodeURIComponent(trip.id)}`;
+      share.addEventListener('click', () => {
+        try {
+          const gpx = GPSSpeedTrips.tripToGpx(trip);
+          if (window.AndroidBridge?.shareText) AndroidBridge.shareText('Rota GPSSpeed', gpx, 'application/gpx+xml');
+          else if (navigator.share) navigator.share({ title: 'Rota GPSSpeed', text: gpx });
+          else navigator.clipboard?.writeText(gpx);
+          status.textContent = 'Rota preparada para compartilhar.';
+          status.hidden = false;
+        } catch (e) {
+          status.textContent = 'Não foi possível exportar esta rota.';
+          status.hidden = false;
+        }
+      });
       del.addEventListener('click', () => {
         if (confirm('Excluir este percurso?')) { GPSSpeedTrips.deleteTrip(trip.id); location.href = 'historico.html'; }
       });
