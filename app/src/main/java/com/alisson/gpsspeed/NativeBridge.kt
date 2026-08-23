@@ -1,5 +1,7 @@
 package com.alisson.gpsspeed
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -11,36 +13,26 @@ class NativeBridge(private val context: Context) {
 
     @JavascriptInterface
     fun startTracking() {
-        val intent = Intent(context, LocationTrackingService::class.java).apply {
-            action = LocationTrackingService.ACTION_START
-        }
+        val intent = Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_START }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
         else context.startService(intent)
     }
 
     @JavascriptInterface
     fun pauseTracking() {
-        val intent = Intent(context, LocationTrackingService::class.java).apply {
-            action = LocationTrackingService.ACTION_PAUSE
-        }
-        context.startService(intent)
+        context.startService(Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_PAUSE })
     }
 
     @JavascriptInterface
     fun resumeTracking() {
-        val intent = Intent(context, LocationTrackingService::class.java).apply {
-            action = LocationTrackingService.ACTION_RESUME
-        }
+        val intent = Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_RESUME }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
         else context.startService(intent)
     }
 
     @JavascriptInterface
     fun stopTracking() {
-        val intent = Intent(context, LocationTrackingService::class.java).apply {
-            action = LocationTrackingService.ACTION_STOP
-        }
-        context.startService(intent)
+        context.startService(Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_STOP })
     }
 
     @JavascriptInterface
@@ -61,9 +53,23 @@ class NativeBridge(private val context: Context) {
 
     @JavascriptInterface
     fun clearTrackingSnapshot() {
-        context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .apply()
+        context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
+    @JavascriptInterface
+    fun copyText(label: String, text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+    }
+
+    @JavascriptInterface
+    fun shareText(title: String, text: String, mimeType: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = if (mimeType.isBlank()) "text/plain" else mimeType
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(Intent.createChooser(send, title).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
     }
 }
