@@ -6,11 +6,16 @@
   <meta name="theme-color" content="#111827">
   <title>Histórico - GPSSpeed</title>
   <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .history-list{display:grid;gap:14px}.history-card{display:grid;gap:10px;padding:18px;border-radius:18px;background:var(--card,#182235)}
+    .history-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.history-main{font-size:26px;font-weight:800}.history-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font-size:14px;opacity:.9}
+    .history-actions{display:flex;gap:10px}.history-actions a{flex:1;text-align:center;padding:11px;border-radius:12px;text-decoration:none;background:#223047;color:inherit}
+  </style>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar"><div><p class="eyebrow">PERCURSOS SALVOS</p><h1>Histórico</h1></div></header>
-    <section id="tripList" class="stats-grid"></section>
+    <section id="tripList" class="history-list"></section>
     <p id="emptyTrips" class="location-card">Nenhum percurso salvo ainda.</p>
     <nav class="bottom-nav" aria-label="Navegação principal">
       <a href="../index.html">Velocímetro</a><a href="mapa.html">Mapa</a><a class="active" href="historico.html">Histórico</a><a href="configuracoes.html">Config.</a>
@@ -26,12 +31,21 @@
       const trips = window.GPSSpeedTrips.getTrips();
       empty.hidden = trips.length > 0;
       list.innerHTML = trips.map((trip) => `
-        <article class="stat-card">
-          <span>${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(trip.startedAt))}</span>
-          <strong>${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</strong>
-          <span>Tempo: ${GPSSpeedUtils.formatDuration(trip.elapsedMs)}</span>
-          <span>Máx.: ${GPSSpeedUtils.formatSpeed(trip.maxSpeed)}</span>
-          <a href="viagem.html?id=${encodeURIComponent(trip.id)}">Abrir percurso</a>
+        <article class="history-card">
+          <div class="history-head">
+            <div><span>${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(trip.startedAt))}</span><div class="history-main">${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</div></div>
+            <strong>${GPSSpeedUtils.formatDuration(trip.elapsedMs)}</strong>
+          </div>
+          <div class="history-meta">
+            <span>Máx.: <strong>${GPSSpeedUtils.formatSpeed(trip.maxSpeed)}</strong></span>
+            <span>Média: <strong>${GPSSpeedUtils.formatSpeed(trip.averageSpeed)}</strong></span>
+            <span>Movimento: <strong>${GPSSpeedUtils.formatDuration(trip.movingMs)}</strong></span>
+            <span>Parado: <strong>${GPSSpeedUtils.formatDuration(trip.stoppedMs)}</strong></span>
+          </div>
+          <div class="history-actions">
+            <a href="viagem.html?id=${encodeURIComponent(trip.id)}">Detalhes</a>
+            <a href="mapa.html?id=${encodeURIComponent(trip.id)}">Ver mapa</a>
+          </div>
         </article>`).join('');
     })();
   </script>
