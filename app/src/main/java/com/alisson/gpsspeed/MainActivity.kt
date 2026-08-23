@@ -40,6 +40,18 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/www/index.html")
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) {
+            webView.post {
+                webView.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent('gpsspeed:native-resume'));",
+                    null
+                )
+            }
+        }
+    }
+
     private fun configureWebView() {
         webView.settings.apply {
             javaScriptEnabled = true
@@ -101,10 +113,7 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
+        if (::webView.isInitialized && webView.canGoBack()) webView.goBack()
+        else super.onBackPressed()
     }
 }
