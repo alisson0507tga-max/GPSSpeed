@@ -39,7 +39,6 @@
 
   function setButtons(state) {
     if (!startBtn || !pauseBtn || !finishBtn) return;
-
     if (state === 'running') {
       startBtn.disabled = true;
       startBtn.textContent = 'Percurso em andamento';
@@ -48,7 +47,6 @@
       finishBtn.disabled = false;
       return;
     }
-
     if (state === 'paused') {
       startBtn.disabled = true;
       startBtn.textContent = 'Percurso pausado';
@@ -57,7 +55,6 @@
       finishBtn.disabled = false;
       return;
     }
-
     startBtn.disabled = false;
     startBtn.textContent = state === 'finished' ? 'Novo percurso' : 'Iniciar percurso';
     pauseBtn.disabled = true;
@@ -86,7 +83,7 @@
   function syncNativeSnapshot(force = false) {
     if (!window.GPSSpeedTracking || !window.AndroidBridge?.getTrackingSnapshot) return false;
     const now = Date.now();
-    if (!force && now - lastNativeSyncAt < 1500) return false;
+    if (!force && now - lastNativeSyncAt < 1200) return false;
     lastNativeSyncAt = now;
 
     try {
@@ -95,20 +92,27 @@
       if (!snapshot || !['running', 'paused'].includes(snapshot.status)) return false;
 
       const restored = window.GPSSpeedTracking.restoreFromSnapshot(snapshot);
-      if (restored) {
-        const points = Array.isArray(snapshot.points) ? snapshot.points : [];
-        window.GPSSpeedometer?.reset?.();
-        points.forEach((point) => {
-          window.GPSSpeedometer?.updateSpeed?.(Number(point.speedKmh) || 0);
-        });
-        setButtons(snapshot.status);
-        if (snapshot.status === 'running') startTimer();
-        else {
-          stopTimer();
-          updateTimer();
-        }
+      if (!restored) return false;
+
+      const points = Array.isArray(snapshot.points) ? snapshot.points : [];
+      window.GPSSpeedometer?.reset?.();
+      points.forEach((point) => window.GPSSpeedometer?.updateSpeed?.(Number(point.speedKmh) || 0));
+
+      const latest = snapshot.lastPoint || points[points.length - 1];
+      if (latest) {
+        window.GPSSpeedGPS?.ingestNativePoint?.(latest, { emit: false });
       }
-      return restored;
+
+      setButtons(snapshot.status);
+      if (snapshot.status === 'running') {
+        startTimer();
+        // Reativa também o watchPosition da WebView para atualizar a tela imediatamente.
+        window.GPSSpeedGPS?.start?.();
+      } else {
+        stopTimer();
+        updateTimer();
+      }
+      return true;
     } catch (error) {
       console.warn('Não foi possível sincronizar o rastreamento nativo:', error);
       return false;
@@ -141,15 +145,13 @@
       try { window.AndroidBridge?.resumeTracking?.(); } catch (_) {}
       setButtons('running');
       startTimer();
+      window.GPSSpeedGPS?.start?.();
     }
   });
 
   finishBtn?.addEventListener('click', () => {
     if (!window.GPSSpeedTracking) return;
-
-    // Traz primeiro os pontos coletados enquanto a tela estava apagada.
     syncNativeSnapshot(true);
-
     const result = window.GPSSpeedTracking.finish();
     stopTimer();
     updateTimer();
@@ -184,6 +186,9 @@
     if (document.visibilityState === 'visible') syncNativeSnapshot(true);
   });
   window.addEventListener('focus', () => syncNativeSnapshot());
+  window.addEventListener('gpsspeed:native-resume', () => {
+    window.setTimeout(() => syncNativeSnapshot(true), 150);
+  });
 
   const restoredLocal = window.GPSSpeedTracking?.restoreCheckpoint?.() || false;
   if (restoredLocal) {
