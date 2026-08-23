@@ -1,36 +1,73 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#111827"><title>Mapa - GPSSpeed</title><link rel="stylesheet" href="../css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Mapa - GPSSpeed</title>
+  <link rel="stylesheet" href="../css/style.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <style>#routeMap{min-height:420px;border-radius:18px;overflow:hidden}.map-select{width:100%;padding:14px;border-radius:12px;font-size:16px;margin-bottom:12px}</style>
+  <style>
+    #routeMap{min-height:420px;border-radius:18px;overflow:hidden}
+    .map-select{width:100%;padding:14px;border-radius:12px;font-size:16px;margin-bottom:12px}
+    .route-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
+    .route-summary .stat-card{min-height:auto}
+    .route-marker{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;border:3px solid white;box-shadow:0 3px 10px rgba(0,0,0,.35)}
+    .route-marker-start{background:#22c55e;color:#07110a}.route-marker-end{background:#ef4444;color:white}
+  </style>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar"><div><p class="eyebrow">ROTA GPS</p><h1>Mapa</h1></div></header>
     <select id="tripSelect" class="map-select" aria-label="Escolher percurso"></select>
+    <section id="routeSummary" class="route-summary" hidden></section>
     <div id="routeMap"></div>
     <p id="mapEmpty" class="location-card" hidden>Nenhum percurso salvo para mostrar.</p>
     <nav class="bottom-nav"><a href="../index.html">Velocímetro</a><a class="active" href="mapa.html">Mapa</a><a href="historico.html">Histórico</a><a href="configuracoes.html">Config.</a></nav>
   </main>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="../js/utils.js"></script><script src="../js/database.js"></script><script src="../js/trips.js"></script><script src="../js/map.js"></script>
+  <script src="../js/utils.js"></script>
+  <script src="../js/database.js"></script>
+  <script src="../js/trips.js"></script>
+  <script src="../js/map.js"></script>
   <script>
     (() => {
       const select = document.getElementById('tripSelect');
       const empty = document.getElementById('mapEmpty');
+      const summary = document.getElementById('routeSummary');
+      const mapEl = document.getElementById('routeMap');
       const trips = GPSSpeedTrips.getTrips();
       let map = null;
-      if (!trips.length) { select.hidden = true; document.getElementById('routeMap').hidden = true; empty.hidden = false; return; }
+
+      if (!trips.length) {
+        select.hidden = true;
+        mapEl.hidden = true;
+        summary.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+
       select.innerHTML = trips.map((t) => `<option value="${GPSSpeedUtils.escapeHtml(t.id)}">${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(t.startedAt))} - ${GPSSpeedUtils.formatDistanceKm(t.distanceKm)}</option>`).join('');
       const requested = GPSSpeedUtils.getQueryParam('id');
       if (requested && trips.some((t) => t.id === requested)) select.value = requested;
+
       function draw() {
         if (map) { map.remove(); map = null; }
         const trip = GPSSpeedTrips.getTrip(select.value);
+        if (!trip) return;
+
+        summary.hidden = false;
+        summary.innerHTML = `
+          <article class="stat-card"><span>Distância</span><strong>${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</strong></article>
+          <article class="stat-card"><span>Tempo</span><strong>${GPSSpeedUtils.formatDuration(trip.elapsedMs)}</strong></article>
+          <article class="stat-card"><span>Máxima</span><strong>${GPSSpeedUtils.formatSpeed(trip.maxSpeed)}</strong></article>
+          <article class="stat-card"><span>Média</span><strong>${GPSSpeedUtils.formatSpeed(trip.averageSpeed)}</strong></article>
+          <article class="stat-card"><span>Em movimento</span><strong>${GPSSpeedUtils.formatDuration(trip.movingMs)}</strong></article>
+          <article class="stat-card"><span>Parado</span><strong>${GPSSpeedUtils.formatDuration(trip.stoppedMs)}</strong></article>`;
+
         map = GPSSpeedMap.renderTripMap('routeMap', trip);
       }
+
       select.addEventListener('change', draw);
       draw();
     })();
