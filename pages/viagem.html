@@ -25,7 +25,9 @@
       details.innerHTML = `
         <article class="stat-card"><span>Início</span><strong>${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(trip.startedAt))}</strong></article>
         <article class="stat-card"><span>Distância</span><strong>${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</strong></article>
-        <article class="stat-card"><span>Tempo</span><strong>${GPSSpeedUtils.formatDuration(trip.elapsedMs)}</strong></article>
+        <article class="stat-card"><span>Tempo total</span><strong>${GPSSpeedUtils.formatDuration(trip.elapsedMs)}</strong></article>
+        <article class="stat-card"><span>Em movimento</span><strong>${GPSSpeedUtils.formatDuration(trip.movingMs)}</strong></article>
+        <article class="stat-card"><span>Parado</span><strong>${GPSSpeedUtils.formatDuration(trip.stoppedMs)}</strong></article>
         <article class="stat-card"><span>Máxima</span><strong>${GPSSpeedUtils.formatSpeed(trip.maxSpeed)}</strong></article>
         <article class="stat-card"><span>Média</span><strong>${GPSSpeedUtils.formatSpeed(trip.averageSpeed)}</strong></article>
         <article class="stat-card"><span>Pontos GPS</span><strong>${Number(trip.pointCount) || 0}</strong></article>`;
