@@ -11,12 +11,26 @@
       <label>Limite do alerta de velocidade (km/h)<input id="speedAlertLimit" type="number" min="10" max="300" step="5" style="width:100%;padding:12px;font-size:16px"></label>
       <label><input id="speedAlertEnabled" type="checkbox"> Ativar alerta de velocidade</label>
       <button class="primary-action" type="submit">Salvar configurações</button>
+    </form>
+
+    <section class="location-card" style="display:grid;gap:12px;margin-top:16px">
+      <strong>Backup</strong>
+      <span>Salva histórico de percursos e configurações.</span>
+      <button id="shareBackup" type="button">Compartilhar backup</button>
+      <button id="copyBackup" type="button">Copiar backup</button>
+      <textarea id="restoreData" rows="6" placeholder="Cole aqui um backup do GPSSpeed" style="width:100%;padding:12px;border-radius:12px"></textarea>
+      <button id="restoreBackup" type="button">Restaurar backup</button>
+    </section>
+
+    <section class="location-card" style="display:grid;gap:12px;margin-top:16px">
+      <strong>Dados</strong>
       <button id="clearTrips" type="button">Apagar todo o histórico</button>
       <p id="settingsStatus" aria-live="polite"></p>
-    </form>
+    </section>
+
     <nav class="bottom-nav"><a href="../index.html">Velocímetro</a><a href="mapa.html">Mapa</a><a href="historico.html">Histórico</a><a class="active" href="configuracoes.html">Config.</a></nav>
   </main>
-  <script src="../js/database.js"></script><script src="../js/settings.js"></script>
+  <script src="../js/database.js"></script><script src="../js/settings.js"></script><script src="../js/trips.js"></script>
   <script>
     (() => {
       const form = document.getElementById('settingsForm');
@@ -26,11 +40,42 @@
       const current = GPSSpeedSettings.load();
       enabled.checked = !!current.speedAlertEnabled;
       limit.value = current.speedAlertLimit;
+
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         GPSSpeedSettings.save({ speedAlertEnabled: enabled.checked, speedAlertLimit: Number(limit.value) });
         status.textContent = 'Configurações salvas.';
       });
+
+      document.getElementById('shareBackup').addEventListener('click', () => {
+        try {
+          const backup = GPSSpeedTrips.buildBackup();
+          if (window.AndroidBridge?.shareText) AndroidBridge.shareText('Backup GPSSpeed', backup, 'application/json');
+          else if (navigator.share) navigator.share({ title: 'Backup GPSSpeed', text: backup });
+          else navigator.clipboard?.writeText(backup);
+          status.textContent = 'Backup preparado para compartilhar.';
+        } catch (_) { status.textContent = 'Não foi possível gerar o backup.'; }
+      });
+
+      document.getElementById('copyBackup').addEventListener('click', () => {
+        try {
+          const backup = GPSSpeedTrips.buildBackup();
+          if (window.AndroidBridge?.copyText) AndroidBridge.copyText('Backup GPSSpeed', backup);
+          else navigator.clipboard?.writeText(backup);
+          status.textContent = 'Backup copiado.';
+        } catch (_) { status.textContent = 'Não foi possível copiar o backup.'; }
+      });
+
+      document.getElementById('restoreBackup').addEventListener('click', () => {
+        const raw = document.getElementById('restoreData').value.trim();
+        if (!raw) { status.textContent = 'Cole um backup primeiro.'; return; }
+        try {
+          const count = GPSSpeedTrips.restoreBackup(raw);
+          status.textContent = `Backup restaurado: ${count} percurso(s).`;
+          document.getElementById('restoreData').value = '';
+        } catch (_) { status.textContent = 'Esse backup não é válido.'; }
+      });
+
       document.getElementById('clearTrips').addEventListener('click', () => {
         if (confirm('Apagar todos os percursos salvos?')) { GPSSpeedDB.clearTrips(); status.textContent = 'Histórico apagado.'; }
       });
