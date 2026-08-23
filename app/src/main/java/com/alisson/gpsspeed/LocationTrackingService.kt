@@ -14,6 +14,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
@@ -30,6 +31,7 @@ class LocationTrackingService : Service(), LocationListener {
         const val KEY_STATUS = "status"
         const val KEY_STARTED_AT = "startedAt"
         const val KEY_POINTS = "points"
+        const val KEY_LAST_POINT = "lastPoint"
         const val KEY_PAUSED_AT = "pausedAt"
         const val KEY_TOTAL_PAUSED = "totalPausedMs"
         const val CHANNEL_ID = "gpsspeed_tracking"
@@ -38,6 +40,7 @@ class LocationTrackingService : Service(), LocationListener {
 
     private lateinit var locationManager: LocationManager
     private var paused = false
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -57,18 +60,21 @@ class LocationTrackingService : Service(), LocationListener {
 
     private fun startTracking() {
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (prefs.getString(KEY_STATUS, "idle") == "idle" || prefs.getString(KEY_STATUS, "idle") == "finished") {
+        val current = prefs.getString(KEY_STATUS, "idle")
+        if (current == "idle" || current == "finished") {
             prefs.edit()
                 .putString(KEY_STATUS, "running")
                 .putLong(KEY_STARTED_AT, System.currentTimeMillis())
                 .putLong(KEY_TOTAL_PAUSED, 0L)
                 .putString(KEY_POINTS, "[]")
+                .remove(KEY_LAST_POINT)
                 .remove(KEY_PAUSED_AT)
                 .apply()
         } else {
             prefs.edit().putString(KEY_STATUS, "running").remove(KEY_PAUSED_AT).apply()
         }
         paused = false
+        acquireWakeLock()
         startForeground(NOTIFICATION_ID, buildNotification("Percurso em andamento"))
         requestUpdates()
     }
@@ -81,6 +87,7 @@ class LocationTrackingService : Service(), LocationListener {
             .putLong(KEY_PAUSED_AT, System.currentTimeMillis())
             .apply()
         stopLocationUpdates()
+        releaseWakeLock()
         startForeground(NOTIFICATION_ID, buildNotification("Percurso pausado"))
     }
 
@@ -95,6 +102,7 @@ class LocationTrackingService : Service(), LocationListener {
             .remove(KEY_PAUSED_AT)
             .apply()
         paused = false
+        acquireWakeLock()
         startForeground(NOTIFICATION_ID, buildNotification("Percurso em andamento"))
         requestUpdates()
     }
@@ -110,6 +118,7 @@ class LocationTrackingService : Service(), LocationListener {
         }
         prefs.edit().putString(KEY_STATUS, "finished").apply()
         stopLocationUpdates()
+        releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -120,9 +129,12 @@ class LocationTrackingService : Service(), LocationListener {
         if (!fine && !coarse) return
 
         try {
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 0f, this)
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
+            }
+            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
+                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2500L, 0f, this)
             }
         } catch (_: Exception) {
         }
@@ -134,8 +146,9 @@ class LocationTrackingService : Service(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         if (paused) return
-        if (location.accuracy > 70f) return
+        if (location.accuracy <= 0f || location.accuracy > 70f) return
 
+        val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0
         val point = JSONObject().apply {
             put("type", "position")
             put("timestamp", location.time.takeIf { it > 0 } ?: System.currentTimeMillis())
@@ -144,19 +157,44 @@ class LocationTrackingService : Service(), LocationListener {
             put("accuracy", location.accuracy.toDouble())
             put("altitude", if (location.hasAltitude()) location.altitude else JSONObject.NULL)
             put("heading", if (location.hasBearing()) location.bearing.toDouble() else JSONObject.NULL)
-            put("speedKmh", if (location.hasSpeed()) location.speed * 3.6 else 0.0)
+            put("speedKmh", speedKmh)
         }
 
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val array = try { JSONArray(prefs.getString(KEY_POINTS, "[]")) } catch (_: Exception) { JSONArray() }
         array.put(point)
+
+        val editor = prefs.edit().putString(KEY_LAST_POINT, point.toString())
         if (array.length() > 12000) {
             val trimmed = JSONArray()
             for (i in array.length() - 10000 until array.length()) trimmed.put(array.get(i))
-            prefs.edit().putString(KEY_POINTS, trimmed.toString()).apply()
+            editor.putString(KEY_POINTS, trimmed.toString())
         } else {
-            prefs.edit().putString(KEY_POINTS, array.toString()).apply()
+            editor.putString(KEY_POINTS, array.toString())
         }
+        editor.apply()
+
+        val kmh = speedKmh.toInt().coerceAtLeast(0)
+        val accuracy = location.accuracy.toInt().coerceAtLeast(0)
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(NOTIFICATION_ID, buildNotification("${kmh} km/h • precisão ${accuracy} m"))
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GPSSpeed:Tracking").apply {
+            setReferenceCounted(false)
+            acquire(6 * 60 * 60 * 1000L)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        wakeLock = null
     }
 
     override fun onProviderEnabled(provider: String) {}
@@ -197,6 +235,7 @@ class LocationTrackingService : Service(), LocationListener {
 
     override fun onDestroy() {
         stopLocationUpdates()
+        releaseWakeLock()
         super.onDestroy()
     }
 }
