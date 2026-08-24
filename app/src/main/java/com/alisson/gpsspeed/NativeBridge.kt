@@ -11,28 +11,43 @@ import org.json.JSONObject
 
 class NativeBridge(private val context: Context) {
 
-    @JavascriptInterface
-    fun startTracking() {
-        val intent = Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_START }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+    private fun startServiceAction(action: String, foreground: Boolean = false) {
+        val intent = Intent(context, LocationTrackingService::class.java).apply { this.action = action }
+        if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
         else context.startService(intent)
     }
 
+    @JavascriptInterface fun startTracking() = startServiceAction(LocationTrackingService.ACTION_START, true)
+    @JavascriptInterface fun pauseTracking() = startServiceAction(LocationTrackingService.ACTION_PAUSE)
+    @JavascriptInterface fun resumeTracking() = startServiceAction(LocationTrackingService.ACTION_RESUME, true)
+    @JavascriptInterface fun stopTracking() = startServiceAction(LocationTrackingService.ACTION_STOP)
+
     @JavascriptInterface
-    fun pauseTracking() {
-        context.startService(Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_PAUSE })
+    fun enableAutoTimeline() {
+        startServiceAction(LocationTrackingService.ACTION_ENABLE_AUTO, true)
     }
 
     @JavascriptInterface
-    fun resumeTracking() {
-        val intent = Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_RESUME }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
-        else context.startService(intent)
+    fun disableAutoTimeline() {
+        startServiceAction(LocationTrackingService.ACTION_DISABLE_AUTO)
     }
 
     @JavascriptInterface
-    fun stopTracking() {
-        context.startService(Intent(context, LocationTrackingService::class.java).apply { action = LocationTrackingService.ACTION_STOP })
+    fun isAutoTimelineEnabled(): Boolean {
+        return context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE)
+            .getBoolean(LocationTrackingService.KEY_AUTO_ENABLED, false)
+    }
+
+    @JavascriptInterface
+    fun getAutoTimelineTrips(): String {
+        val prefs = context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE)
+        return prefs.getString(LocationTrackingService.KEY_AUTO_TRIPS, "[]") ?: "[]"
+    }
+
+    @JavascriptInterface
+    fun clearImportedAutoTimelineTrips() {
+        context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE)
+            .edit().putString(LocationTrackingService.KEY_AUTO_TRIPS, "[]").apply()
     }
 
     @JavascriptInterface
@@ -45,6 +60,8 @@ class NativeBridge(private val context: Context) {
             put("pausedAt", prefs.getLong(LocationTrackingService.KEY_PAUSED_AT, 0L))
             put("totalPausedMs", prefs.getLong(LocationTrackingService.KEY_TOTAL_PAUSED, 0L))
             put("points", JSONArray(prefs.getString(LocationTrackingService.KEY_POINTS, "[]")))
+            put("autoEnabled", prefs.getBoolean(LocationTrackingService.KEY_AUTO_ENABLED, false))
+            put("autoActive", prefs.getBoolean(LocationTrackingService.KEY_AUTO_ACTIVE, false))
             if (!lastPointRaw.isNullOrBlank()) {
                 try { put("lastPoint", JSONObject(lastPointRaw)) } catch (_: Exception) {}
             }
@@ -53,7 +70,10 @@ class NativeBridge(private val context: Context) {
 
     @JavascriptInterface
     fun clearTrackingSnapshot() {
-        context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        val prefs = context.getSharedPreferences(LocationTrackingService.PREFS, Context.MODE_PRIVATE)
+        val autoEnabled = prefs.getBoolean(LocationTrackingService.KEY_AUTO_ENABLED, false)
+        val autoTrips = prefs.getString(LocationTrackingService.KEY_AUTO_TRIPS, "[]")
+        prefs.edit().clear().putBoolean(LocationTrackingService.KEY_AUTO_ENABLED, autoEnabled).putString(LocationTrackingService.KEY_AUTO_TRIPS, autoTrips).apply()
     }
 
     @JavascriptInterface
