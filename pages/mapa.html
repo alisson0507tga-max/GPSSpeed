@@ -8,23 +8,36 @@
   <link rel="stylesheet" href="../css/style.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    #routeMap{min-height:420px;border-radius:18px;overflow:hidden}
+    #routeMap{min-height:460px;border-radius:18px;overflow:hidden;background:#111827}
     .map-select{width:100%;padding:14px;border-radius:12px;font-size:16px;margin-bottom:12px}
     .route-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
     .route-summary .stat-card{min-height:auto}
     .route-marker{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;border:3px solid white;box-shadow:0 3px 10px rgba(0,0,0,.35)}
-    .route-marker-start{background:#22c55e;color:#07110a}.route-marker-end{background:#ef4444;color:white}
+    .route-marker-start{background:#22c55e;color:#07110a}
+    .route-marker-end{background:#ef4444;color:white}
+    .route-marker-current{background:#2563eb;color:white;font-size:18px}
+    .live-badge{display:inline-flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;border-radius:999px;background:#162033;color:#dbeafe;font-size:14px}
+    .live-dot{width:9px;height:9px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 5px rgba(34,197,94,.12)}
   </style>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar"><div><p class="eyebrow">ROTA GPS</p><h1>Mapa</h1></div></header>
+
+    <div id="liveBadge" class="live-badge" hidden><span class="live-dot"></span> Percurso atual ao vivo</div>
     <select id="tripSelect" class="map-select" aria-label="Escolher percurso"></select>
     <section id="routeSummary" class="route-summary" hidden></section>
     <div id="routeMap"></div>
-    <p id="mapEmpty" class="location-card" hidden>Nenhum percurso salvo para mostrar.</p>
-    <nav class="bottom-nav"><a href="../index.html">Velocímetro</a><a class="active" href="mapa.html">Mapa</a><a href="historico.html">Histórico</a><a href="configuracoes.html">Config.</a></nav>
+    <p id="mapEmpty" class="location-card" hidden>Nenhum percurso disponível para mostrar.</p>
+
+    <nav class="bottom-nav">
+      <a href="../index.html">Velocímetro</a>
+      <a class="active" href="mapa.html">Mapa</a>
+      <a href="historico.html">Histórico</a>
+      <a href="configuracoes.html">Config.</a>
+    </nav>
   </main>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="../js/utils.js"></script>
   <script src="../js/database.js"></script>
@@ -36,26 +49,126 @@
       const empty = document.getElementById('mapEmpty');
       const summary = document.getElementById('routeSummary');
       const mapEl = document.getElementById('routeMap');
+      const liveBadge = document.getElementById('liveBadge');
       const trips = GPSSpeedTrips.getTrips();
-      let map = null;
 
-      if (!trips.length) {
-        select.hidden = true;
-        mapEl.hidden = true;
-        summary.hidden = true;
-        empty.hidden = false;
-        return;
+      let map = null;
+      let liveController = null;
+      let liveTimer = null;
+
+      function getLocalCheckpoint() {
+        try {
+          const raw = localStorage.getItem('gpsspeed.activeTrip.v2');
+          return raw ? JSON.parse(raw) : null;
+        } catch (_) {
+          return null;
+        }
       }
 
-      select.innerHTML = trips.map((t) => `<option value="${GPSSpeedUtils.escapeHtml(t.id)}">${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(t.startedAt))} - ${GPSSpeedUtils.formatDistanceKm(t.distanceKm)}</option>`).join('');
-      const requested = GPSSpeedUtils.getQueryParam('id');
-      if (requested && trips.some((t) => t.id === requested)) select.value = requested;
+      function getNativeSnapshot() {
+        try {
+          if (!window.AndroidBridge?.getTrackingSnapshot) return null;
+          const raw = window.AndroidBridge.getTrackingSnapshot();
+          return typeof raw === 'string' ? JSON.parse(raw) : raw;
+        } catch (_) {
+          return null;
+        }
+      }
 
-      function draw() {
-        if (map) { map.remove(); map = null; }
-        const trip = GPSSpeedTrips.getTrip(select.value);
+      function getLiveSnapshot() {
+        const native = getNativeSnapshot();
+        const local = getLocalCheckpoint();
+
+        const nativeActive = native && ['running', 'paused'].includes(native.status);
+        const localActive = local && ['running', 'paused'].includes(local.status);
+        if (!nativeActive && !localActive) return null;
+
+        if (nativeActive) return native;
+        return local;
+      }
+
+      function formatLiveSummary(snapshot) {
+        const points = Array.isArray(snapshot?.points) ? snapshot.points : [];
+        const last = snapshot?.lastPoint || points[points.length - 1] || null;
+        const startedAt = Number(snapshot?.startedAt) || Date.now();
+        const pausedMs = Number(snapshot?.totalPausedMs) || 0;
+        const elapsed = Math.max(0, Date.now() - startedAt - pausedMs);
+        const speed = Number(last?.speedKmh) || 0;
+        const accuracy = Number(last?.accuracy);
+
+        summary.hidden = false;
+        summary.innerHTML = `
+          <article class="stat-card"><span>Status</span><strong>${snapshot.status === 'paused' ? 'Pausado' : 'Em andamento'}</strong></article>
+          <article class="stat-card"><span>Tempo</span><strong>${GPSSpeedUtils.formatDuration(elapsed)}</strong></article>
+          <article class="stat-card"><span>Velocidade</span><strong>${GPSSpeedUtils.formatSpeed(speed)}</strong></article>
+          <article class="stat-card"><span>Precisão</span><strong>${Number.isFinite(accuracy) ? Math.round(accuracy) + ' m' : '--'}</strong></article>`;
+      }
+
+      function stopLiveTimer() {
+        if (liveTimer) {
+          clearInterval(liveTimer);
+          liveTimer = null;
+        }
+      }
+
+      function destroyMap() {
+        stopLiveTimer();
+        if (liveController) {
+          liveController.destroy();
+          liveController = null;
+        } else if (map) {
+          map.remove();
+        }
+        map = null;
+      }
+
+      function buildOptions() {
+        const live = getLiveSnapshot();
+        const options = [];
+        if (live) options.push('<option value="__live__">Percurso atual (ao vivo)</option>');
+        trips.forEach((t) => {
+          options.push(`<option value="${GPSSpeedUtils.escapeHtml(t.id)}">${GPSSpeedUtils.escapeHtml(GPSSpeedUtils.formatDateTime(t.startedAt))} - ${GPSSpeedUtils.formatDistanceKm(t.distanceKm)}</option>`);
+        });
+        select.innerHTML = options.join('');
+        return !!live;
+      }
+
+      function drawLive() {
+        const snapshot = getLiveSnapshot();
+        if (!snapshot) {
+          buildOptions();
+          if (select.options.length) {
+            select.value = select.options[0].value;
+            draw();
+          }
+          return;
+        }
+
+        const points = Array.isArray(snapshot.points) ? snapshot.points.slice() : [];
+        if (snapshot.lastPoint) {
+          const last = points[points.length - 1];
+          if (!last || Number(last.timestamp) !== Number(snapshot.lastPoint.timestamp)) points.push(snapshot.lastPoint);
+        }
+
+        liveBadge.hidden = false;
+        formatLiveSummary(snapshot);
+
+        if (!liveController) {
+          liveController = GPSSpeedMap.renderLiveMap('routeMap', points);
+          if (!liveController && !window.L) {
+            mapEl.innerHTML = '<p class="location-card">O mapa precisa de internet para carregar nesta versão.</p>';
+            return;
+          }
+        } else {
+          liveController.update(points, true);
+        }
+      }
+
+      function drawSaved(tripId) {
+        const trip = GPSSpeedTrips.getTrip(tripId);
         if (!trip) return;
 
+        liveBadge.hidden = true;
         summary.hidden = false;
         summary.innerHTML = `
           <article class="stat-card"><span>Distância</span><strong>${GPSSpeedUtils.formatDistanceKm(trip.distanceKm)}</strong></article>
@@ -68,7 +181,41 @@
         map = GPSSpeedMap.renderTripMap('routeMap', trip);
       }
 
+      function draw() {
+        destroyMap();
+        empty.hidden = true;
+        mapEl.hidden = false;
+
+        if (select.value === '__live__') {
+          drawLive();
+          liveTimer = setInterval(drawLive, 2500);
+        } else {
+          drawSaved(select.value);
+        }
+      }
+
+      const hasLive = buildOptions();
+      if (!select.options.length) {
+        select.hidden = true;
+        mapEl.hidden = true;
+        summary.hidden = true;
+        liveBadge.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+
+      const requested = GPSSpeedUtils.getQueryParam('id');
+      if (requested && trips.some((t) => t.id === requested)) {
+        select.value = requested;
+      } else if (hasLive) {
+        select.value = '__live__';
+      }
+
       select.addEventListener('change', draw);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && select.value === '__live__') drawLive();
+      });
+
       draw();
     })();
   </script>
