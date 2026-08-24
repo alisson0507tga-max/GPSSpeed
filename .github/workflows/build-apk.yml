@@ -11,6 +11,7 @@ on:
       - 'js/**'
       - 'pages/**'
       - 'assets/**'
+      - 'ci/**'
       - 'index.html'
       - 'manifest.json'
       - 'build.gradle.kts'
@@ -32,26 +33,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Restaurar assinatura debug fixa
-        id: debug-key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: gpsspeed-debug-keystore-v2
-
-      - name: Criar assinatura debug fixa na primeira build
-        if: steps.debug-key.outputs.cache-hit != 'true'
+      - name: Instalar assinatura fixa do GPSSpeed
         run: |
           mkdir -p ~/.android
-          keytool -genkeypair -v \
-            -keystore ~/.android/debug.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=GPSSpeed Debug,O=GPSSpeed,C=BR"
+          base64 --decode ci/gpsspeed-debug.keystore.b64 > ~/.android/debug.keystore
+          chmod 600 ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias gpsspeed
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
