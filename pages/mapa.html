@@ -8,17 +8,25 @@
   <link rel="stylesheet" href="../css/style.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    #routeMap{min-height:460px;border-radius:18px;overflow:hidden;background:#111827}
-    .map-select{width:100%;padding:14px;border-radius:12px;font-size:16px;margin-bottom:12px}
+    #routeMap{min-height:520px;border-radius:22px;overflow:hidden;background:#111827;border:1px solid rgba(148,163,184,.15)}
+    .map-select{width:100%;padding:14px 16px;border-radius:14px;font-size:16px;margin-bottom:12px}
     .route-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
     .route-summary .stat-card{min-height:auto}
-    .route-marker{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;border:3px solid white;box-shadow:0 3px 10px rgba(0,0,0,.35)}
+    .route-marker{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,.45);transition:transform .2s ease}
     .route-marker-start{background:#22c55e;color:#07110a}
     .route-marker-end{background:#ef4444;color:white}
-    .route-marker-current{background:#2563eb;color:white;font-size:18px}
+    .route-marker-current{background:#2563eb;color:white;font-size:21px}
     .live-badge{display:inline-flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;border-radius:999px;background:#162033;color:#dbeafe;font-size:14px}
     .live-dot{width:9px;height:9px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 5px rgba(34,197,94,.12)}
     .map-status{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#162033;color:#d1d5db;font-size:14px}
+    .map-toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
+    .map-style-btn{min-height:44px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:#111827;color:#cbd5e1;font-size:14px;font-weight:700}
+    .map-style-btn.active{background:#20304a;color:#fff;border-color:#3b82f6}
+    .map-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+    .map-actions button{min-height:44px;border-radius:12px;font-size:14px;font-weight:700}
+    .map-note{font-size:12px;color:#94a3b8;margin:8px 2px 0}
+    .leaflet-control-attribution{font-size:10px!important}
+    .leaflet-control-scale-line{border-color:#111827!important;background:rgba(255,255,255,.82)!important}
   </style>
 </head>
 <body>
@@ -26,10 +34,25 @@
     <header class="topbar"><div><p class="eyebrow">ROTA GPS</p><h1>Mapa</h1></div></header>
 
     <div id="liveBadge" class="live-badge" hidden><span class="live-dot"></span> Percurso atual ao vivo</div>
+
     <select id="tripSelect" class="map-select" aria-label="Escolher visualização"></select>
+
+    <div class="map-toolbar" aria-label="Tipo de mapa">
+      <button class="map-style-btn" data-map-style="street" type="button">Ruas</button>
+      <button class="map-style-btn" data-map-style="satellite" type="button">Satélite</button>
+      <button class="map-style-btn" data-map-style="hybrid" type="button">Híbrido</button>
+    </div>
+
     <p id="mapStatus" class="map-status">Buscando sua localização...</p>
     <section id="routeSummary" class="route-summary" hidden></section>
+
     <div id="routeMap"></div>
+
+    <div class="map-actions">
+      <button id="recenterBtn" type="button">Centralizar em mim</button>
+      <button id="followBtn" type="button">Seguir: ligado</button>
+    </div>
+    <p class="map-note">Satélite e híbrido usam imagens da Esri. O modo ruas usa OpenStreetMap.</p>
 
     <nav class="bottom-nav">
       <a href="../index.html">Velocímetro</a>
@@ -51,6 +74,9 @@
       const mapEl = document.getElementById('routeMap');
       const liveBadge = document.getElementById('liveBadge');
       const mapStatus = document.getElementById('mapStatus');
+      const recenterBtn = document.getElementById('recenterBtn');
+      const followBtn = document.getElementById('followBtn');
+      const styleButtons = Array.from(document.querySelectorAll('[data-map-style]'));
       const trips = GPSSpeedTrips.getTrips();
 
       let map = null;
@@ -58,6 +84,22 @@
       let liveTimer = null;
       let geoWatchId = null;
       let currentPoint = null;
+      let followEnabled = true;
+      let selectedMapStyle = GPSSpeedMap.getSavedStyle?.() || 'hybrid';
+
+      function syncStyleButtons() {
+        styleButtons.forEach((button) => {
+          button.classList.toggle('active', button.dataset.mapStyle === selectedMapStyle);
+        });
+      }
+
+      function applyMapStyle(style) {
+        selectedMapStyle = ['street', 'satellite', 'hybrid'].includes(style) ? style : 'hybrid';
+        GPSSpeedMap.saveStyle?.(selectedMapStyle);
+        if (liveController?.setBaseStyle) liveController.setBaseStyle(selectedMapStyle);
+        else if (map?._gpsspeedSetBaseStyle) map._gpsspeedSetBaseStyle(selectedMapStyle);
+        syncStyleButtons();
+      }
 
       function getLocalCheckpoint() {
         try {
@@ -103,16 +145,17 @@
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
               accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+              heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
               speedKmh: Number.isFinite(position.coords.speed) && position.coords.speed >= 0 ? position.coords.speed * 3.6 : 0
             };
-            if (select.value === '__current__') drawCurrent();
+            if (select.value === '__current__') drawCurrent(false);
           },
           () => {
             if (select.value === '__current__' && !bestKnownCurrentPoint()) {
               mapStatus.textContent = 'Não foi possível obter sua localização. Verifique se o GPS está ligado.';
             }
           },
-          { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+          { enableHighAccuracy: true, maximumAge: 500, timeout: 15000 }
         );
       }
 
@@ -142,24 +185,37 @@
         return !!live;
       }
 
-      function renderController(points, follow = true) {
-        if (!liveController) liveController = GPSSpeedMap.renderLiveMap('routeMap', points);
-        else liveController.update(points, follow);
+      function renderController(points, follow = followEnabled) {
+        if (!liveController) {
+          liveController = GPSSpeedMap.renderLiveMap('routeMap', points, {
+            style: selectedMapStyle,
+            follow: followEnabled
+          });
+        } else {
+          liveController.setFollow?.(followEnabled);
+          liveController.update(points, follow);
+        }
         return !!liveController;
       }
 
-      function drawCurrent() {
+      function drawCurrent(forceCenter = false) {
         const point = bestKnownCurrentPoint();
         liveBadge.hidden = true;
         summary.hidden = true;
         if (!point) {
           mapStatus.textContent = 'Buscando sua localização...';
-          if (!liveController && window.L) liveController = GPSSpeedMap.renderLiveMap('routeMap', []);
+          if (!liveController && window.L) {
+            liveController = GPSSpeedMap.renderLiveMap('routeMap', [], {
+              style: selectedMapStyle,
+              follow: followEnabled
+            });
+          }
           return;
         }
         const accuracy = Number(point.accuracy);
         mapStatus.textContent = `Sua localização atual${Number.isFinite(accuracy) ? ' • precisão ' + Math.round(accuracy) + ' m' : ''}`;
-        renderController([point], true);
+        renderController([point], forceCenter || followEnabled);
+        if (forceCenter) liveController?.recenter?.();
       }
 
       function formatLiveSummary(snapshot) {
@@ -183,7 +239,7 @@
         if (!snapshot) {
           select.value = '__current__';
           destroyMap();
-          drawCurrent();
+          drawCurrent(true);
           return;
         }
         const points = Array.isArray(snapshot.points) ? snapshot.points.slice() : [];
@@ -194,7 +250,7 @@
         liveBadge.hidden = false;
         mapStatus.textContent = 'Atualizando rota em tempo real';
         formatLiveSummary(snapshot);
-        renderController(points, true);
+        renderController(points, followEnabled);
       }
 
       function drawSaved(tripId) {
@@ -210,14 +266,18 @@
           <article class="stat-card"><span>Média</span><strong>${GPSSpeedUtils.formatSpeed(trip.averageSpeed)}</strong></article>
           <article class="stat-card"><span>Em movimento</span><strong>${GPSSpeedUtils.formatDuration(trip.movingMs)}</strong></article>
           <article class="stat-card"><span>Parado</span><strong>${GPSSpeedUtils.formatDuration(trip.stoppedMs)}</strong></article>`;
-        map = GPSSpeedMap.renderTripMap('routeMap', trip);
+        map = GPSSpeedMap.renderTripMap('routeMap', trip, { style: selectedMapStyle });
+      }
+
+      function updateFollowButton() {
+        followBtn.textContent = `Seguir: ${followEnabled ? 'ligado' : 'desligado'}`;
       }
 
       function draw() {
         destroyMap();
         mapEl.hidden = false;
         if (select.value === '__current__') {
-          drawCurrent();
+          drawCurrent(true);
         } else if (select.value === '__live__') {
           drawLive();
           liveTimer = setInterval(drawLive, 2500);
@@ -225,6 +285,32 @@
           drawSaved(select.value);
         }
       }
+
+      styleButtons.forEach((button) => {
+        button.addEventListener('click', () => applyMapStyle(button.dataset.mapStyle));
+      });
+
+      recenterBtn.addEventListener('click', () => {
+        if (select.value === '__current__') drawCurrent(true);
+        else if (select.value === '__live__') liveController?.recenter?.();
+        else if (map) {
+          const trip = GPSSpeedTrips.getTrip(select.value);
+          const points = Array.isArray(trip?.points) ? trip.points : [];
+          if (points.length) {
+            const last = points[points.length - 1];
+            map.setView([Number(last.latitude), Number(last.longitude)], 17, { animate: true });
+          }
+        }
+      });
+
+      followBtn.addEventListener('click', () => {
+        followEnabled = !followEnabled;
+        liveController?.setFollow?.(followEnabled);
+        updateFollowButton();
+        if (followEnabled && (select.value === '__current__' || select.value === '__live__')) {
+          liveController?.recenter?.();
+        }
+      });
 
       const hasLive = buildOptions();
       const requested = GPSSpeedUtils.getQueryParam('id');
@@ -236,10 +322,12 @@
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           if (select.value === '__live__') drawLive();
-          if (select.value === '__current__') drawCurrent();
+          if (select.value === '__current__') drawCurrent(false);
         }
       });
 
+      syncStyleButtons();
+      updateFollowButton();
       startCurrentLocationWatch();
       draw();
     })();
