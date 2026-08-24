@@ -33,10 +33,25 @@ jobs:
           java-version: '17'
 
       - name: Restaurar assinatura debug fixa
+        id: debug-key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: gpsspeed-debug-keystore-v1
+          key: gpsspeed-debug-keystore-v2
+
+      - name: Criar assinatura debug fixa na primeira build
+        if: steps.debug-key.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=GPSSpeed Debug,O=GPSSpeed,C=BR"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
