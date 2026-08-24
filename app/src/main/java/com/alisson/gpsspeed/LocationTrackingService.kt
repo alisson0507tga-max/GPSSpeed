@@ -55,10 +55,15 @@ class LocationTrackingService : Service(), LocationListener {
     private var wakeLock: PowerManager.WakeLock? = null
     private var autoMoveConfirmations = 0
     private var lastAutoCandidate: Location? = null
+    private val autoCandidatePoints = mutableListOf<Location>()
+    private var autoCandidateStartedAt = 0L
+    private var autoCandidateLastMovingAt = 0L
 
     private val autoStartSpeedKmh = 4.0
+    private val autoStartDistanceMeters = 100.0
     private val autoStopSpeedKmh = 2.5
     private val autoStopAfterMs = 2 * 60 * 1000L
+    private val autoCandidateResetAfterMs = 60_000L
     private val maxAccuracy = 70f
 
     override fun onCreate() {
@@ -109,6 +114,7 @@ class LocationTrackingService : Service(), LocationListener {
         } else {
             prefs.edit().putString(KEY_STATUS, "running").remove(KEY_PAUSED_AT).apply()
         }
+        clearAutoCandidate()
         paused = false
         acquireWakeLock()
         startForeground(NOTIFICATION_ID, buildNotification("Percurso em andamento"))
@@ -157,6 +163,7 @@ class LocationTrackingService : Service(), LocationListener {
     private fun enableAutoMode() {
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_AUTO_ENABLED, true).apply()
+        clearAutoCandidate()
         startAutoMonitoring()
     }
 
@@ -164,6 +171,7 @@ class LocationTrackingService : Service(), LocationListener {
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY_AUTO_ACTIVE, false)) finishAutoTrip(System.currentTimeMillis())
         prefs.edit().putBoolean(KEY_AUTO_ENABLED, false).putBoolean(KEY_AUTO_ACTIVE, false).apply()
+        clearAutoCandidate()
         if (prefs.getString(KEY_STATUS, "idle") == "running") return
         stopLocationUpdates()
         releaseWakeLock()
@@ -179,7 +187,7 @@ class LocationTrackingService : Service(), LocationListener {
         }
         paused = false
         releaseWakeLock()
-        startForeground(NOTIFICATION_ID, buildNotification(if (prefs.getBoolean(KEY_AUTO_ACTIVE, false)) "Linha do Tempo: trajeto em andamento" else "Linha do Tempo automática ativa"))
+        startForeground(NOTIFICATION_ID, buildNotification(if (prefs.getBoolean(KEY_AUTO_ACTIVE, false)) "Linha do Tempo: trajeto em andamento" else "Linha do Tempo pronta • inicia após 100 m"))
         requestUpdates(4000L)
     }
 
@@ -241,25 +249,61 @@ class LocationTrackingService : Service(), LocationListener {
         val now = System.currentTimeMillis()
 
         if (!active) {
-            val movedByPosition = lastAutoCandidate?.let { distanceMeters(it.latitude, it.longitude, location.latitude, location.longitude) >= max(10.0, location.accuracy.toDouble()) } ?: false
-            if (speedKmh >= autoStartSpeedKmh || movedByPosition) autoMoveConfirmations++ else autoMoveConfirmations = 0
+            val previous = lastAutoCandidate
+            val stepDistance = previous?.let {
+                distanceMeters(it.latitude, it.longitude, location.latitude, location.longitude)
+            } ?: 0.0
+            val accuracyGate = max(10.0, location.accuracy.toDouble())
+            val looksMoving = speedKmh >= autoStartSpeedKmh || stepDistance >= accuracyGate
+
+            if (looksMoving) {
+                autoMoveConfirmations++
+                autoCandidateLastMovingAt = now
+                if (autoCandidatePoints.isEmpty()) {
+                    previous?.let { autoCandidatePoints.add(Location(it)) }
+                    if (autoCandidatePoints.isEmpty()) autoCandidatePoints.add(Location(location))
+                    autoCandidateStartedAt = autoCandidatePoints.first().time.takeIf { it > 0 } ?: now
+                }
+                val lastBuffered = autoCandidatePoints.lastOrNull()
+                if (lastBuffered == null || distanceMeters(lastBuffered.latitude, lastBuffered.longitude, location.latitude, location.longitude) >= max(5.0, location.accuracy * 0.4)) {
+                    autoCandidatePoints.add(Location(location))
+                    if (autoCandidatePoints.size > 120) autoCandidatePoints.removeAt(0)
+                }
+            } else if (autoCandidatePoints.isNotEmpty() && now - autoCandidateLastMovingAt >= autoCandidateResetAfterMs) {
+                clearAutoCandidate()
+            }
+
             lastAutoCandidate = Location(location)
 
-            if (autoMoveConfirmations >= 3) {
-                autoMoveConfirmations = 0
-                val first = locationToJson(location)
+            val startCandidate = autoCandidatePoints.firstOrNull()
+            val displacement = startCandidate?.let {
+                distanceMeters(it.latitude, it.longitude, location.latitude, location.longitude)
+            } ?: 0.0
+
+            if (autoMoveConfirmations >= 2 && displacement >= autoStartDistanceMeters) {
+                val buffered = JSONArray()
+                autoCandidatePoints.forEach { buffered.put(locationToJson(it)) }
+                val currentJson = locationToJson(location)
+                val lastBufferedJson = if (buffered.length() > 0) buffered.optJSONObject(buffered.length() - 1) else null
+                if (lastBufferedJson == null || lastBufferedJson.optLong("timestamp") != currentJson.optLong("timestamp")) buffered.put(currentJson)
+
+                val startedAt = autoCandidateStartedAt.takeIf { it > 0 } ?: now
                 prefs.edit()
                     .putBoolean(KEY_AUTO_ACTIVE, true)
-                    .putLong(KEY_AUTO_STARTED_AT, now)
+                    .putLong(KEY_AUTO_STARTED_AT, startedAt)
                     .putLong(KEY_AUTO_LAST_MOVING_AT, now)
-                    .putString(KEY_AUTO_POINTS, JSONArray().put(first).toString())
+                    .putString(KEY_AUTO_POINTS, buffered.toString())
                     .putString(KEY_STATUS, "auto-monitoring")
-                    .putString(KEY_LAST_POINT, first.toString())
+                    .putString(KEY_LAST_POINT, currentJson.toString())
                     .apply()
-                startForeground(NOTIFICATION_ID, buildNotification("Linha do Tempo: trajeto iniciado"))
+
+                clearAutoCandidate()
+                acquireWakeLock()
+                startForeground(NOTIFICATION_ID, buildNotification("Linha do Tempo: trajeto iniciado após 100 m"))
                 requestUpdates(2000L)
             } else {
-                updateNotification(location, "Linha do Tempo pronta")
+                val progress = displacement.toInt().coerceIn(0, 99)
+                updateNotification(location, "Linha do Tempo pronta • $progress/100 m")
             }
             return
         }
@@ -279,8 +323,17 @@ class LocationTrackingService : Service(), LocationListener {
         val lastMovingAt = prefs.getLong(KEY_AUTO_LAST_MOVING_AT, now)
         if (speedKmh < autoStopSpeedKmh && now - lastMovingAt >= autoStopAfterMs) {
             finishAutoTrip(lastMovingAt)
+            releaseWakeLock()
             requestUpdates(4000L)
         }
+    }
+
+    private fun clearAutoCandidate() {
+        autoMoveConfirmations = 0
+        lastAutoCandidate = null
+        autoCandidatePoints.clear()
+        autoCandidateStartedAt = 0L
+        autoCandidateLastMovingAt = 0L
     }
 
     private fun finishAutoTrip(finishedAt: Long) {
@@ -335,7 +388,8 @@ class LocationTrackingService : Service(), LocationListener {
             .putString(KEY_AUTO_POINTS, "[]")
             .putString(KEY_STATUS, "auto-monitoring")
             .apply()
-        startForeground(NOTIFICATION_ID, buildNotification("Linha do Tempo automática ativa"))
+        clearAutoCandidate()
+        startForeground(NOTIFICATION_ID, buildNotification("Linha do Tempo pronta • inicia após 100 m"))
     }
 
     private fun updateNotification(location: Location, prefix: String) {
