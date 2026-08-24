@@ -11,7 +11,6 @@ on:
       - 'js/**'
       - 'pages/**'
       - 'assets/**'
-      - 'ci/**'
       - 'index.html'
       - 'manifest.json'
       - 'build.gradle.kts'
@@ -33,17 +32,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar assinatura fixa do GPSSpeed
-        run: |
-          mkdir -p ~/.android
-          base64 --decode ci/gpsspeed-debug.keystore.b64 > ~/.android/debug.keystore
-          chmod 600 ~/.android/debug.keystore
-          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias gpsspeed
-
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Conferir assinatura fixa do projeto
+        run: keytool -list -keystore app/gpsspeed-debug.keystore -storepass android -alias gpsspeed
 
       - name: Gerar APK debug
         run: gradle :app:assembleDebug --stacktrace
