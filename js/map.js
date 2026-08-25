@@ -1,105 +1,42 @@
 (() => {
   'use strict';
+  const MAP_STYLE_KEY='gpsspeed.mapStyle.v1';
+  const KM_MARKERS_KEY='gpsspeed.kmMarkers.v1';
+  const SPEED_COLORS_KEY='gpsspeed.speedColors.v1';
 
-  const MAP_STYLE_KEY = 'gpsspeed.mapStyle.v1';
+  function markerIcon(label,className,heading=null){if(!window.L)return null;const r=Number.isFinite(+heading)?` style="transform:rotate(${+heading}deg)"`:'';return L.divIcon({className:'',html:`<div class="route-marker ${className}"${r}>${label}</div>`,iconSize:[38,38],iconAnchor:[19,19]});}
+  const validPoints=points=>Array.isArray(points)?points.filter(p=>Number.isFinite(+p.latitude)&&Number.isFinite(+p.longitude)):[];
+  const getSavedStyle=()=>{try{const v=localStorage.getItem(MAP_STYLE_KEY);return['street','satellite','hybrid','terrain'].includes(v)?v:'hybrid';}catch(_){return'hybrid';}};
+  const saveStyle=s=>{try{localStorage.setItem(MAP_STYLE_KEY,s);}catch(_){}};
+  const prefBool=(key,def=true)=>{try{const v=localStorage.getItem(key);return v===null?def:v==='1';}catch(_){return def;}};
+  const saveBool=(key,v)=>{try{localStorage.setItem(key,v?'1':'0');}catch(_){}};
 
-  function markerIcon(label, className, heading = null) {
-    if (!window.L) return null;
-    const rotation = Number.isFinite(Number(heading)) ? ` style="transform:rotate(${Number(heading)}deg)"` : '';
-    return L.divIcon({ className:'', html:`<div class="route-marker ${className}"${rotation}>${label}</div>`, iconSize:[38,38], iconAnchor:[19,19] });
-  }
+  function createBaseLayers(){return{
+    street:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,detectRetina:true,attribution:'&copy; OpenStreetMap contributors'}),
+    satellite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri, Maxar, Earthstar Geographics, GIS User Community'}),
+    labels:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Reference &copy; Esri'}),
+    terrain:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'Map data &copy; OpenStreetMap contributors, SRTM | Map style &copy; OpenTopoMap'})};}
+  function installBaseStyle(map,preferred){const layers=createBaseLayers();let active=null;function setStyle(style){const next=['street','satellite','hybrid','terrain'].includes(style)?style:'hybrid';Object.values(layers).forEach(l=>{if(map.hasLayer(l))map.removeLayer(l);});if(next==='street')layers.street.addTo(map);else if(next==='terrain')layers.terrain.addTo(map);else{layers.satellite.addTo(map);if(next==='hybrid')layers.labels.addTo(map);}active=next;saveStyle(next);return next;}map._gpsspeedSetBaseStyle=setStyle;map._gpsspeedGetBaseStyle=()=>active;setStyle(preferred||getSavedStyle());return{setStyle,getStyle:()=>active};}
+  function addMapUtilities(map){L.control.scale({imperial:false,metric:true,position:'bottomleft'}).addTo(map);}
 
-  function validPoints(points) {
-    return Array.isArray(points) ? points.filter(p => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))) : [];
-  }
+  function speedColor(speed){const s=+speed||0;if(s<30)return'#60a5fa';if(s<60)return'#22c55e';if(s<90)return'#facc15';if(s<120)return'#f97316';return'#ef4444';}
+  function addSpeedLegend(map){const ctl=L.control({position:'bottomright'});ctl.onAdd=()=>{const d=L.DomUtil.create('div','gpsspeed-speed-legend');d.style.cssText='background:rgba(15,23,42,.9);color:#fff;padding:8px 10px;border-radius:10px;font:11px sans-serif;line-height:1.5';d.innerHTML='<b>Velocidade</b><br><span style="color:#60a5fa">●</span> 0–29 &nbsp;<span style="color:#22c55e">●</span> 30–59<br><span style="color:#facc15">●</span> 60–89 &nbsp;<span style="color:#f97316">●</span> 90–119<br><span style="color:#ef4444">●</span> 120+ km/h';return d;};ctl.addTo(map);return ctl;}
+  function addCompass(map,rotation){const ctl=L.control({position:'topright'});ctl.onAdd=()=>{const b=L.DomUtil.create('button','gpsspeed-compass');b.type='button';b.style.cssText='width:54px;height:54px;border-radius:50%;border:2px solid #fff;background:#111827;color:#fff;font-weight:800;box-shadow:0 2px 8px #0008';b.innerHTML='<span style="color:#ef4444">N</span><br><small>0°</small>';L.DomEvent.disableClickPropagation(b);b.addEventListener('click',()=>rotation.reset());rotation.onChange=angle=>{b.querySelector('small').textContent=`${Math.round(angle)}°`;b.style.transform=`rotate(${-angle}deg)`;};return b;};ctl.addTo(map);return ctl;}
 
-  function getSavedStyle(){ try { const v=localStorage.getItem(MAP_STYLE_KEY); return ['street','satellite','hybrid'].includes(v)?v:'hybrid'; } catch(_){ return 'hybrid'; } }
-  function saveStyle(style){ try{ localStorage.setItem(MAP_STYLE_KEY,style); }catch(_){} }
+  function installRotation(map,container){let bearing=0,onChange=null;function apply(){const pane=container.querySelector('.leaflet-map-pane');if(pane){pane.style.transformOrigin='50% 50%';pane.style.rotate=`${bearing}deg`;}if(typeof api.onChange==='function')api.onChange(bearing);}function setBearing(v){bearing=((+v||0)%360+360)%360;apply();return bearing;}const api={setBearing,getBearing:()=>bearing,rotateBy:d=>setBearing(bearing+d),reset:()=>setBearing(0),onChange};return api;}
 
-  function createBaseLayers(){
-    const street=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,detectRetina:true,attribution:'&copy; OpenStreetMap contributors'});
-    const satellite=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri, Maxar, Earthstar Geographics, GIS User Community'});
-    const labels=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Reference &copy; Esri'});
-    return {street,satellite,labels};
-  }
+  function addBaseRoute(map,latlngs){return{outline:L.polyline(latlngs,{weight:10,opacity:.72,color:'#08111f',lineCap:'round',lineJoin:'round'}).addTo(map),line:L.polyline(latlngs,{weight:6,opacity:.95,color:'#22d3ee',lineCap:'round',lineJoin:'round'}).addTo(map)};}
+  function addSpeedSegments(map,points){const group=L.layerGroup().addTo(map);for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],s=Math.max(+a.speedKmh||0,+b.speedKmh||0,+a.calculatedSpeedKmh||0,+b.calculatedSpeedKmh||0);L.polyline([[+a.latitude,+a.longitude],[+b.latitude,+b.longitude]],{weight:6,opacity:1,color:speedColor(s),lineCap:'round'}).addTo(group);}return group;}
+  function pointDetails(p){const speed=Math.max(+p.speedKmh||0,+p.calculatedSpeedKmh||0),dist=(+p.cumulativeDistanceMeters||0)/1000;return `<strong>${speed.toFixed(1)} km/h</strong><br>${dist.toFixed(2)} km desde o início<br>${+p.timestamp?new Date(+p.timestamp).toLocaleTimeString('pt-BR'):'--'}${Number.isFinite(+p.altitude)?`<br>Altitude ${Math.round(+p.altitude)} m`:''}${Number.isFinite(+p.accuracy)?`<br>Precisão ${Math.round(+p.accuracy)} m`:''}<br>${(+p.latitude).toFixed(6)}, ${(+p.longitude).toFixed(6)}`;}
+  function nearestPoint(points,latlng){let best=null,bestD=Infinity;points.forEach(p=>{const d=(+p.latitude-latlng.lat)**2+(+p.longitude-latlng.lng)**2;if(d<bestD){bestD=d;best=p;}});return best;}
+  function installLineClick(map,line,points,onPointSelected){line.on('click',e=>{const p=nearestPoint(points,e.latlng);if(!p)return;L.popup().setLatLng([+p.latitude,+p.longitude]).setContent(pointDetails(p)).openOn(map);onPointSelected?.(p);});}
 
-  function installBaseStyle(map,preferredStyle){
-    const layers=createBaseLayers(); let activeStyle=null;
-    function setStyle(style){
-      const next=['street','satellite','hybrid'].includes(style)?style:'hybrid';
-      if(next===activeStyle)return next;
-      Object.values(layers).forEach(l=>{if(map.hasLayer(l))map.removeLayer(l);});
-      if(next==='street')layers.street.addTo(map); else {layers.satellite.addTo(map); if(next==='hybrid')layers.labels.addTo(map);}
-      activeStyle=next; saveStyle(next); return next;
-    }
-    map._gpsspeedSetBaseStyle=setStyle; map._gpsspeedGetBaseStyle=()=>activeStyle; setStyle(preferredStyle||getSavedStyle());
-    return {setStyle,getStyle:()=>activeStyle};
-  }
+  function getSplits(trip,points){if(Array.isArray(trip?.kilometerSplits)&&trip.kilometerSplits.length)return trip.kilometerSplits;return window.GPSSpeedTrips?.buildKilometerSplits?.(points)||[];}
+  function addKmMarkers(map,trip,points){const group=L.layerGroup().addTo(map),splits=getSplits(trip,points);splits.forEach(s=>{const p=s.endPoint;if(!p)return;const html=`<div style="background:#111827;color:#fff;border:2px solid #fff;border-radius:12px;padding:4px 7px;font:700 11px sans-serif;white-space:nowrap">${s.kilometer} km<br>${Math.round(+s.averageSpeed||0)} km/h</div>`;const icon=L.divIcon({className:'',html,iconSize:[62,38],iconAnchor:[31,19]});L.marker([+p.latitude,+p.longitude],{icon}).addTo(group).bindPopup(`<strong>KM ${s.kilometer}</strong><br>Média ${(+s.averageSpeed||0).toFixed(1)} km/h<br>Máxima ${(+s.maxSpeed||0).toFixed(1)} km/h<br>Tempo ${window.GPSSpeedUtils?.formatDuration?.(+s.elapsedMs||0)||Math.round((+s.elapsedMs||0)/1000)+'s'}`);});return group;}
 
-  function addMapUtilities(map){ L.control.scale({imperial:false,metric:true,position:'bottomleft'}).addTo(map); }
+  function renderTripMap(containerId,trip,options={}){const container=document.getElementById(containerId);if(!container)return null;const points=validPoints(trip?.points);if(!points.length){container.innerHTML='<p class="location-card">Este percurso não possui pontos de GPS salvos.</p>';return null;}if(!window.L){container.innerHTML='<p class="location-card">O mapa precisa de internet para carregar nesta versão.</p>';return null;}container.innerHTML='';const map=L.map(containerId,{zoomControl:true,preferCanvas:true});const base=installBaseStyle(map,options.style),rotation=installRotation(map,container);addMapUtilities(map);addCompass(map,rotation);const latlngs=points.map(p=>[+p.latitude,+p.longitude]),route=addBaseRoute(map,latlngs),speedGroup=addSpeedSegments(map,points),legend=addSpeedLegend(map),kmGroup=addKmMarkers(map,trip,points);if(!prefBool(SPEED_COLORS_KEY,true)){map.removeLayer(speedGroup);legend.remove();}if(!prefBool(KM_MARKERS_KEY,true))map.removeLayer(kmGroup);installLineClick(map,route.line,points,options.onPointSelected);L.marker(latlngs[0],{icon:markerIcon('A','route-marker-start')}).addTo(map).bindPopup(`INÍCIO<br>${new Date(+trip.startedAt||+points[0].timestamp).toLocaleString('pt-BR')}<br>${(+points[0].latitude).toFixed(6)}, ${(+points[0].longitude).toFixed(6)}`);L.marker(latlngs.at(-1),{icon:markerIcon('B','route-marker-end')}).addTo(map).bindPopup(`FIM / DESTINO<br>${new Date(+trip.finishedAt||+points.at(-1).timestamp).toLocaleString('pt-BR')}<br>${(+points.at(-1).latitude).toFixed(6)}, ${(+points.at(-1).longitude).toFixed(6)}`);map.fitBounds(route.line.getBounds(),{padding:[34,34],maxZoom:18});setTimeout(()=>map.invalidateSize(),100);map._gpsspeedRotation=rotation;map._gpsspeedBase=base;map._gpsspeedKmGroup=kmGroup;map._gpsspeedSpeedGroup=speedGroup;map._gpsspeedLegend=legend;map._gpsspeedSetKmMarkers=v=>{saveBool(KM_MARKERS_KEY,v);if(v&&!map.hasLayer(kmGroup))kmGroup.addTo(map);if(!v&&map.hasLayer(kmGroup))map.removeLayer(kmGroup);};map._gpsspeedSetSpeedColors=v=>{saveBool(SPEED_COLORS_KEY,v);if(v){if(!map.hasLayer(speedGroup))speedGroup.addTo(map);legend.addTo(map);}else{if(map.hasLayer(speedGroup))map.removeLayer(speedGroup);legend.remove();}};return map;}
 
-  function addRouteLine(map,latlngs){
-    const outline=L.polyline(latlngs,{weight:10,opacity:.72,color:'#08111f',lineCap:'round',lineJoin:'round'}).addTo(map);
-    const line=L.polyline(latlngs,{weight:6,opacity:1,color:'#22d3ee',lineCap:'round',lineJoin:'round'}).addTo(map);
-    return {outline,line};
-  }
+  function renderLiveMap(containerId,initialPoints=[],options={}){const container=document.getElementById(containerId);if(!container||!window.L)return null;container.innerHTML='';const map=L.map(containerId,{zoomControl:true,preferCanvas:true}),base=installBaseStyle(map,options.style),rotation=installRotation(map,container);addMapUtilities(map);addCompass(map,rotation);const route=L.polyline([],{weight:6,opacity:1,color:'#22d3ee',lineCap:'round'}).addTo(map);let startMarker=null,currentMarker=null,accuracyCircle=null,firstFit=true,followEnabled=options.follow!==false;function update(points,follow=followEnabled){const clean=validPoints(points);if(!clean.length)return false;const latlngs=clean.map(p=>[+p.latitude,+p.longitude]);route.setLatLngs(latlngs);if(clean.length>1&&!startMarker)startMarker=L.marker(latlngs[0],{icon:markerIcon('A','route-marker-start')}).addTo(map);const p=clean.at(-1),last=latlngs.at(-1),icon=markerIcon('➤','route-marker-current',+p.heading);if(!currentMarker)currentMarker=L.marker(last,{icon}).addTo(map);else{currentMarker.setLatLng(last);currentMarker.setIcon(icon);}const a=+p.accuracy;if(Number.isFinite(a)&&a>0){if(!accuracyCircle)accuracyCircle=L.circle(last,{radius:a,weight:1,opacity:.7,fillOpacity:.08,color:'#60a5fa'}).addTo(map);else accuracyCircle.setLatLng(last).setRadius(a);}if(firstFit){firstFit=false;if(latlngs.length===1)map.setView(last,17);else map.fitBounds(route.getBounds(),{padding:[34,34],maxZoom:18});}else if(follow)map.panTo(last,{animate:true,duration:.45});return true;}function recenter(){const c=currentMarker?.getLatLng();if(c)map.setView(c,Math.max(map.getZoom(),17),{animate:true});}update(initialPoints,false);return{map,update,recenter,setFollow:v=>(followEnabled=!!v),isFollowing:()=>followEnabled,setBaseStyle:base.setStyle,getBaseStyle:base.getStyle,setBearing:rotation.setBearing,getBearing:rotation.getBearing,rotateBy:rotation.rotateBy,resetBearing:rotation.reset,destroy(){map.remove();}};}
 
-  function installRotation(map, container){
-    let bearing=0, dragging=false, startX=0, startBearing=0;
-    function apply(){ container.style.setProperty('--map-bearing',`${bearing}deg`); const pane=container.querySelector('.leaflet-map-pane'); if(pane){pane.style.transformOrigin='50% 50%'; pane.style.rotate=`${bearing}deg`;} }
-    function setBearing(value){ bearing=((Number(value)||0)%360+360)%360; apply(); return bearing; }
-    function reset(){ return setBearing(0); }
-    container.addEventListener('pointerdown',e=>{ if(!e.isPrimary || e.pointerType==='mouse' && e.button!==0)return; if(!e.target.closest('.leaflet-container'))return; if(e.target.closest('.leaflet-control'))return; if(e.pointerType==='touch' && e.width<20)return; dragging=true; startX=e.clientX; startBearing=bearing; });
-    container.addEventListener('pointermove',e=>{ if(!dragging)return; const dx=e.clientX-startX; if(Math.abs(dx)>8)setBearing(startBearing+dx*.65); });
-    const stop=()=>{dragging=false;}; container.addEventListener('pointerup',stop); container.addEventListener('pointercancel',stop);
-    return {setBearing,getBearing:()=>bearing,rotateBy:d=>setBearing(bearing+d),reset};
-  }
-
-  function routePopup(point,index,total){
-    const speed=Number(point.speedKmh); const accuracy=Number(point.accuracy); const time=Number(point.timestamp);
-    return `<strong>Ponto ${index+1}/${total}</strong><br>${Number.isFinite(speed)?speed.toFixed(1)+' km/h':'Velocidade --'}${Number.isFinite(accuracy)?'<br>Precisão '+Math.round(accuracy)+' m':''}${time?'<br>'+new Date(time).toLocaleTimeString('pt-BR'):''}`;
-  }
-
-  function addDetailPoints(map,points){
-    if(points.length<2)return;
-    const step=Math.max(1,Math.ceil(points.length/40));
-    for(let i=0;i<points.length;i+=step){ const p=points[i]; L.circleMarker([+p.latitude,+p.longitude],{radius:4,weight:1,opacity:.85,fillOpacity:.7}).addTo(map).bindPopup(routePopup(p,i,points.length)); }
-  }
-
-  function renderTripMap(containerId,trip,options={}){
-    const container=document.getElementById(containerId); if(!container)return null;
-    const points=validPoints(trip?.points); if(!points.length){container.innerHTML='<p class="location-card">Este percurso não possui pontos de GPS salvos.</p>';return null;}
-    if(!window.L){container.innerHTML='<p class="location-card">O mapa precisa de internet para carregar nesta versão.</p>';return null;}
-    container.innerHTML=''; const map=L.map(containerId,{zoomControl:true,preferCanvas:true}); const base=installBaseStyle(map,options.style); addMapUtilities(map); const rotation=installRotation(map,container);
-    const latlngs=points.map(p=>[+p.latitude,+p.longitude]); const route=addRouteLine(map,latlngs);
-    L.marker(latlngs[0],{icon:markerIcon('A','route-marker-start')}).addTo(map).bindPopup('Início do percurso');
-    if(latlngs.length>1)L.marker(latlngs.at(-1),{icon:markerIcon('B','route-marker-end')}).addTo(map).bindPopup('Fim do percurso');
-    addDetailPoints(map,points);
-    if(latlngs.length===1)map.setView(latlngs[0],17); else map.fitBounds(route.line.getBounds(),{padding:[34,34],maxZoom:18});
-    setTimeout(()=>map.invalidateSize(),100);
-    map._gpsspeedRotation=rotation; map._gpsspeedBase=base;
-    return map;
-  }
-
-  function renderLiveMap(containerId,initialPoints=[],options={}){
-    const container=document.getElementById(containerId); if(!container||!window.L)return null;
-    container.innerHTML=''; const map=L.map(containerId,{zoomControl:true,preferCanvas:true}); const base=installBaseStyle(map,options.style); addMapUtilities(map); const rotation=installRotation(map,container);
-    const routeOutline=L.polyline([],{weight:10,opacity:.72,color:'#08111f',lineCap:'round',lineJoin:'round'}).addTo(map);
-    const routeLine=L.polyline([],{weight:6,opacity:1,color:'#22d3ee',lineCap:'round',lineJoin:'round'}).addTo(map);
-    let startMarker=null,currentMarker=null,accuracyCircle=null,firstFit=true,followEnabled=options.follow!==false;
-    function update(points,follow=followEnabled){
-      const clean=validPoints(points); if(!clean.length)return false; const latlngs=clean.map(p=>[+p.latitude,+p.longitude]); routeOutline.setLatLngs(latlngs); routeLine.setLatLngs(latlngs);
-      if(clean.length>1&&!startMarker)startMarker=L.marker(latlngs[0],{icon:markerIcon('A','route-marker-start')}).addTo(map).bindPopup('Início do percurso');
-      const p=clean.at(-1),last=latlngs.at(-1),icon=markerIcon('➤','route-marker-current',Number(p.heading));
-      if(!currentMarker)currentMarker=L.marker(last,{icon}).addTo(map).bindPopup('Sua posição'); else {currentMarker.setLatLng(last);currentMarker.setIcon(icon);}
-      const acc=Number(p.accuracy); if(Number.isFinite(acc)&&acc>0){if(!accuracyCircle)accuracyCircle=L.circle(last,{radius:acc,weight:1,opacity:.7,fillOpacity:.08,color:'#60a5fa'}).addTo(map);else accuracyCircle.setLatLng(last).setRadius(acc);}
-      if(firstFit){firstFit=false;if(latlngs.length===1)map.setView(last,17);else map.fitBounds(routeLine.getBounds(),{padding:[34,34],maxZoom:18});}else if(follow)map.panTo(last,{animate:true,duration:.35}); return true;
-    }
-    function recenter(){const c=currentMarker?.getLatLng();if(c)map.setView(c,Math.max(map.getZoom(),17),{animate:true});}
-    function setFollow(v){followEnabled=!!v;return followEnabled;}
-    update(initialPoints,false); setTimeout(()=>map.invalidateSize(),100);
-    return {map,update,recenter,setFollow,isFollowing:()=>followEnabled,setBaseStyle:base.setStyle,getBaseStyle:base.getStyle,setBearing:rotation.setBearing,getBearing:rotation.getBearing,rotateBy:rotation.rotateBy,resetBearing:rotation.reset,destroy(){map.remove();}};
-  }
-
-  window.GPSSpeedMap={renderTripMap,renderLiveMap,getSavedStyle,saveStyle};
+  window.GPSSpeedMap={renderTripMap,renderLiveMap,getSavedStyle,saveStyle,getKmMarkersVisible:()=>prefBool(KM_MARKERS_KEY,true),getSpeedColorsVisible:()=>prefBool(SPEED_COLORS_KEY,true)};
 })();
