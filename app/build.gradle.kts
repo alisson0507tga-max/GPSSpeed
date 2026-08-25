@@ -11,8 +11,8 @@ android {
         applicationId = "com.alisson.gpsspeed"
         minSdk = 24
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.7.1"
+        versionCode = 13
+        versionName = "1.8.0"
     }
 
     signingConfigs {
@@ -25,23 +25,15 @@ android {
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        release {
-            isMinifyEnabled = false
-        }
+        debug { signingConfig = signingConfigs.getByName("debug") }
+        release { isMinifyEnabled = false }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
+    kotlinOptions { jvmTarget = "17" }
     sourceSets["main"].assets.srcDir("src/main/assets")
 }
 
@@ -55,14 +47,8 @@ dependencies {
 tasks.register<Sync>("syncWebAssets") {
     val root = rootProject.projectDir
     into(layout.projectDirectory.dir("src/main/assets/www"))
-    from(root.resolve("index.html"))
-    from(root.resolve("manifest.json"))
-    from(root.resolve("css")) { into("css") }
-    from(root.resolve("js")) { into("js") }
-    from(root.resolve("pages")) { into("pages") }
-    from(root.resolve("assets")) { into("assets") }
+    from(root.resolve("index.html")); from(root.resolve("manifest.json"))
+    from(root.resolve("css")) { into("css") }; from(root.resolve("js")) { into("js") }
+    from(root.resolve("pages")) { into("pages") }; from(root.resolve("assets")) { into("assets") }
 }
-
-tasks.named("preBuild") {
-    dependsOn("syncWebAssets")
-}
+tasks.named("preBuild") { dependsOn("syncWebAssets") }
