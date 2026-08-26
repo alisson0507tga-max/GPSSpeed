@@ -6,10 +6,18 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.webkit.JavascriptInterface
+import com.alisson.gpsspeed.data.LegacyTripImporter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
 class NativeBridge(private val context: Context) {
+
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val legacyTripImporter by lazy { LegacyTripImporter(context.applicationContext) }
 
     private fun startServiceAction(action: String, foreground: Boolean = false) {
         val intent = Intent(context, LocationTrackingService::class.java).apply { this.action = action }
@@ -26,6 +34,14 @@ class NativeBridge(private val context: Context) {
     @JavascriptInterface fun stopTracking() = startServiceAction(LocationTrackingService.ACTION_STOP)
     @JavascriptInterface fun enableAutoTimeline() = startServiceAction(LocationTrackingService.ACTION_ENABLE_AUTO, true)
     @JavascriptInterface fun disableAutoTimeline() = startServiceAction(LocationTrackingService.ACTION_DISABLE_AUTO)
+
+    @JavascriptInterface
+    fun importLegacyTripsToRoom(json: String) {
+        if (json.isBlank()) return
+        ioScope.launch {
+            runCatching { legacyTripImporter.importJson(json) }
+        }
+    }
 
     @JavascriptInterface
     fun isAutoTimelineEnabled(): Boolean {
