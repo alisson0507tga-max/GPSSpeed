@@ -28,8 +28,16 @@ interface RouteDao {
     @Query("SELECT * FROM routes ORDER BY startedAt DESC")
     fun observeRoutes(): Flow<List<RouteEntity>>
 
+    @Transaction
+    @Query("SELECT * FROM routes ORDER BY startedAt DESC")
+    fun observeRoutesWithPoints(): Flow<List<RouteWithPoints>>
+
     @Query("SELECT * FROM routes ORDER BY startedAt DESC")
     suspend fun getRoutes(): List<RouteEntity>
+
+    @Transaction
+    @Query("SELECT * FROM routes WHERE id = :routeId LIMIT 1")
+    suspend fun getRouteWithPoints(routeId: String): RouteWithPoints?
 
     @Query("SELECT * FROM routes WHERE id = :routeId LIMIT 1")
     suspend fun getRoute(routeId: String): RouteEntity?
